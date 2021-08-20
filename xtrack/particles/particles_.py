@@ -12,12 +12,12 @@ scalar_vars = (
     (xo.Int64,   'num_particles'),
     (xo.Float64, 'q0'),
     (xo.Float64, 'mass0'),
+    (xo.Float64, 'beta0'),
+    (xo.Float64, 'gamma0'),
+    (xo.Float64, 'p0c',)
     )
 
 per_particle_vars = [
-    (xo.Float64, 'p0c'),
-    (xo.Float64, 'gamma0'),
-    (xo.Float64, 'beta0'),
     (xo.Float64, 's'),
     (xo.Float64, 'x'),
     (xo.Float64, 'y'),
@@ -80,7 +80,7 @@ class Particles(dress(ParticlesData)):
                 # Needed to generate consistent longitudinal variables
                 pyparticles = Pyparticles(**kwargs)
 
-                part_dict = _pyparticles_to_xtrack_dict(pyparticles)
+                part_dict = pyparticles_to_xtrack_dict(pyparticles)
                 if 'num_particles' in kwargs.keys():
                     assert kwargs['num_particles'] == part_dict['num_particles']
                 else:
@@ -129,6 +129,18 @@ class Particles(dress(ParticlesData)):
         self.beta0 = self.p0c / energy0
         self.gamma0 = energy0 / self.mass0
 
+    def _set_delta(self):
+        rep = np.sqrt(self.delta ** 2 + 2 * self.delta + 1 / self.beta0 ** 2)
+        irpp = 1 + self.delta
+        self.rpp = 1 / irpp
+        beta = irpp / rep
+        self.rvv = beta / self.beta0
+        self.psigma = (
+            np.sqrt(self.delta ** 2 + 2 * self.delta + 1 / self.beta0 ** 2)
+            / self.beta0
+            - 1 / self.beta0 ** 2
+        )
+
     @property
     def ptau(self):
         return (
@@ -136,36 +148,33 @@ class Particles(dress(ParticlesData)):
             - 1 / self.beta0
         )
 
-
-    def get_sigma_matrix(self, mask=[]):
+    def get_sigma_matrix(self, to_dict=True):
 
         def get_sigma_ij(i, j):
     	    return np.mean(np.array(i)*np.array(j)) - np.mean(np.array(i))*np.mean(np.array(j))
 	
 	#x,px,y,py,z,dp: Σij with i,j=1,...,6.
-        if len(mask) == 0:  # use all particles
+        if to_dict:
             return {"Sig_11": get_sigma_ij(self.x, self.x),
-                    "Sig_12": get_sigma_ij(self.x, self.px),
-                    "Sig_13": get_sigma_ij(self.x, self.y),
-                    "Sig_14": get_sigma_ij(self.x, self.py),
-                    "Sig_22": get_sigma_ij(self.px, self.px),
-                    "Sig_23": get_sigma_ij(self.px, self.y),
-                    "Sig_24": get_sigma_ij(self.px, self.py),
-                    "Sig_33": get_sigma_ij(self.y, self.y),
-                    "Sig_34": get_sigma_ij(self.y, self.py),
-                    "Sig_44": get_sigma_ij(self.py, self.py)}
+                "Sig_12": get_sigma_ij(self.x, self.px),
+                "Sig_13": get_sigma_ij(self.x, self.y),
+                "Sig_14": get_sigma_ij(self.x, self.py),
+                "Sig_22": get_sigma_ij(self.px, self.px),
+                "Sig_23": get_sigma_ij(self.px, self.y),
+                "Sig_24": get_sigma_ij(self.px, self.py),
+                "Sig_33": get_sigma_ij(self.y, self.y),
+                "Sig_34": get_sigma_ij(self.y, self.py),
+                "Sig_44": get_sigma_ij(self.py, self.py)}
+        
         else:
-            return {"Sig_11": get_sigma_ij(self.x[mask], self.x[mask]),
-                    "Sig_12": get_sigma_ij(self.x[mask], self.px[mask]),
-                    "Sig_13": get_sigma_ij(self.x[mask], self.y[mask]),
-                    "Sig_14": get_sigma_ij(self.x[mask], self.py[mask]),
-                    "Sig_22": get_sigma_ij(self.px[mask], self.px[mask]),
-                    "Sig_23": get_sigma_ij(self.px[mask], self.y[mask]),
-                    "Sig_24": get_sigma_ij(self.px[mask], self.py[mask]),
-                    "Sig_33": get_sigma_ij(self.y[mask], self.y[mask]),
-                    "Sig_34": get_sigma_ij(self.y[mask], self.py[mask]),
-                    "Sig_44": get_sigma_ij(self.py[mask], self.py[mask])}
-
+            return np.array([
+                         [get_sigma_ij(self.x,     self.x), get_sigma_ij(self.x,     self.px), get_sigma_ij(self.x,     self.y), get_sigma_ij(self.x,     self.py), get_sigma_ij(self.x,     self.z), get_sigma_ij(self.x,     self.delta)],
+                         [get_sigma_ij(self.px,    self.x), get_sigma_ij(self.px,    self.px), get_sigma_ij(self.px,    self.y), get_sigma_ij(self.px,    self.py), get_sigma_ij(self.px,    self.z), get_sigma_ij(self.px,    self.delta)],
+                         [get_sigma_ij(self.y,     self.x), get_sigma_ij(self.y,     self.px), get_sigma_ij(self.y,     self.y), get_sigma_ij(self.y,     self.py), get_sigma_ij(self.y,     self.z), get_sigma_ij(self.y,     self.delta)],
+                         [get_sigma_ij(self.py,    self.x), get_sigma_ij(self.py,    self.px), get_sigma_ij(self.py,    self.y), get_sigma_ij(self.py,    self.py), get_sigma_ij(self.py,    self.z), get_sigma_ij(self.py,    self.delta)],
+                         [get_sigma_ij(self.z,     self.x), get_sigma_ij(self.z,     self.px), get_sigma_ij(self.z,     self.y), get_sigma_ij(self.z,     self.py), get_sigma_ij(self.z,     self.z), get_sigma_ij(self.z,     self.delta)],
+                         [get_sigma_ij(self.delta, self.x), get_sigma_ij(self.delta, self.px), get_sigma_ij(self.delta, self.y), get_sigma_ij(self.delta, self.py), get_sigma_ij(self.delta, self.z), get_sigma_ij(self.delta, self.delta)]
+                        ])
 
     def set_reference(self, p0c=7e12, mass0=pmass, q0=1):
         self.q0 = q0
@@ -185,7 +194,7 @@ class Particles(dress(ParticlesData)):
 
         # Needed to generate consistent longitudinal variables
         pyparticles = Pyparticles(**kwargs)
-        part_dict = _pyparticles_to_xtrack_dict(pyparticles)
+        part_dict = pyparticles_to_xtrack_dict(pyparticles)
         for tt, kk in list(scalar_vars):
             if kk == 'num_particles':
                 continue
@@ -363,10 +372,9 @@ void LocalParticle_add_to_energy(LocalParticle* part, double delta_energy){
     LocalParticle_set_rpp(part, 1. / one_plus_delta );
 }
 
-
-
 /*gpufun*/
 void LocalParticle_update_delta(LocalParticle* part, double new_delta_value){
+
     double const beta0 = LocalParticle_get_beta0(part);
     double const delta_beta0 = new_delta_value * beta0;
     double const ptau_beta0  = sqrt( delta_beta0 * delta_beta0 +
@@ -378,35 +386,9 @@ void LocalParticle_update_delta(LocalParticle* part, double new_delta_value){
     double const psigma = ptau_beta0 / ( beta0 * beta0 );
 
     LocalParticle_set_delta(part, new_delta_value);
-
     LocalParticle_set_rvv(part, rvv );
     LocalParticle_set_rpp(part, rpp );
     LocalParticle_set_psigma(part, psigma );
-
-}
-
-/*gpufun*/
-void LocalParticle_update_p0c(LocalParticle* part, double new_p0c_value){
-
-    double const mass0 = LocalParticle_get_mass0(part);
-    double const old_p0c = LocalParticle_get_p0c(part);
-    double const old_delta = LocalParticle_get_delta(part);
-
-    double const ppc = old_p0c * old_delta + old_p0c;
-    double const new_delta = (ppc - new_p0c_value)/new_p0c_value;
-
-    double const new_energy0 = sqrt(new_p0c_value*new_p0c_value + mass0 * mass0);
-    double const new_beta0 = new_p0c_value / new_energy0;
-    double const new_gamma0 = new_energy0 / mass0;
-
-    LocalParticle_set_p0c(part, new_p0c_value);
-    LocalParticle_set_gamma0(part, new_gamma0);
-    LocalParticle_set_beta0(part, new_beta0);
-
-    LocalParticle_update_delta(part, new_delta);
-
-    LocalParticle_scale_px(part, old_p0c/new_p0c_value);
-    LocalParticle_scale_py(part, old_p0c/new_p0c_value);
 
 }
 '''
@@ -418,7 +400,7 @@ void LocalParticle_update_p0c(LocalParticle* part, double new_p0c_value){
 
     return source
 
-def _pyparticles_to_xtrack_dict(pyparticles):
+def pyparticles_to_xtrack_dict(pyparticles):
 
     out = {}
 

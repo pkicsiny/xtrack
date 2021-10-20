@@ -126,7 +126,7 @@ class Particles(dress(ParticlesData)):
                     getattr(self, kk)[:] = value
 
         if force_active_state:
-            self.state[:] = 2
+            self.state[:] = 1
 
 
     def _set_p0c(self):

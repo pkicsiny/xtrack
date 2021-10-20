@@ -5,6 +5,10 @@ from ._pyparticles import Pyparticles
 
 from ..dress import dress
 
+"""
+19/10/2021: add test attribute for test particles that do not contribute to the bb field but are affected by it
+"""
+
 pmass = 938.2720813e6
 
 
@@ -35,6 +39,7 @@ per_particle_vars = [
     (xo.Int64, 'at_element'),
     (xo.Int64, 'at_turn'),
     (xo.Int64, 'state'),
+    (xo.Int64, 'test'),
     ]
 
 fields = {}
@@ -121,7 +126,7 @@ class Particles(dress(ParticlesData)):
                     getattr(self, kk)[:] = value
 
         if force_active_state:
-            self.state[:] = 1
+            self.state[:] = 2
 
 
     def _set_p0c(self):
@@ -143,28 +148,29 @@ class Particles(dress(ParticlesData)):
     	    return np.mean(np.array(i)*np.array(j)) - np.mean(np.array(i))*np.mean(np.array(j))
 	
 	#x,px,y,py,z,dp: Σij with i,j=1,...,6.
-        if len(mask) == 0:  # use all particles
-            return {"Sig_11": get_sigma_ij(self.x, self.x),
-                    "Sig_12": get_sigma_ij(self.x, self.px),
-                    "Sig_13": get_sigma_ij(self.x, self.y),
-                    "Sig_14": get_sigma_ij(self.x, self.py),
-                    "Sig_22": get_sigma_ij(self.px, self.px),
-                    "Sig_23": get_sigma_ij(self.px, self.y),
-                    "Sig_24": get_sigma_ij(self.px, self.py),
-                    "Sig_33": get_sigma_ij(self.y, self.y),
-                    "Sig_34": get_sigma_ij(self.y, self.py),
-                    "Sig_44": get_sigma_ij(self.py, self.py)}
+        if len(mask) == 0:  # use all particles (but exclude test particles)
+            return {"Sig_11": get_sigma_ij(self.x[self.test==0],   self.x[self.test==0]),
+                    "Sig_12": get_sigma_ij(self.x[self.test==0],  self.px[self.test==0]),
+                    "Sig_13": get_sigma_ij(self.x[self.test==0],   self.y[self.test==0]),
+                    "Sig_14": get_sigma_ij(self.x[self.test==0],  self.py[self.test==0]),
+                    "Sig_22": get_sigma_ij(self.px[self.test==0], self.px[self.test==0]),
+                    "Sig_23": get_sigma_ij(self.px[self.test==0],  self.y[self.test==0]),
+                    "Sig_24": get_sigma_ij(self.px[self.test==0], self.py[self.test==0]),
+                    "Sig_33": get_sigma_ij(self.y[self.test==0],   self.y[self.test==0]),
+                    "Sig_34": get_sigma_ij(self.y[self.test==0],  self.py[self.test==0]),
+                    "Sig_44": get_sigma_ij(self.py[self.test==0], self.py[self.test==0])}
         else:
-            return {"Sig_11": get_sigma_ij(self.x[mask], self.x[mask]),
-                    "Sig_12": get_sigma_ij(self.x[mask], self.px[mask]),
-                    "Sig_13": get_sigma_ij(self.x[mask], self.y[mask]),
-                    "Sig_14": get_sigma_ij(self.x[mask], self.py[mask]),
-                    "Sig_22": get_sigma_ij(self.px[mask], self.px[mask]),
-                    "Sig_23": get_sigma_ij(self.px[mask], self.y[mask]),
-                    "Sig_24": get_sigma_ij(self.px[mask], self.py[mask]),
-                    "Sig_33": get_sigma_ij(self.y[mask], self.y[mask]),
-                    "Sig_34": get_sigma_ij(self.y[mask], self.py[mask]),
-                    "Sig_44": get_sigma_ij(self.py[mask], self.py[mask])}
+
+            return {"Sig_11": get_sigma_ij(self.x[mask][self.test[mask]==0],   self.x[mask][self.test[mask]==0]),
+                    "Sig_12": get_sigma_ij(self.x[mask][self.test[mask]==0],  self.px[mask][self.test[mask]==0]),
+                    "Sig_13": get_sigma_ij(self.x[mask][self.test[mask]==0],   self.y[mask][self.test[mask]==0]),
+                    "Sig_14": get_sigma_ij(self.x[mask][self.test[mask]==0],  self.py[mask][self.test[mask]==0]),
+                    "Sig_22": get_sigma_ij(self.px[mask][self.test[mask]==0], self.px[mask][self.test[mask]==0]),
+                    "Sig_23": get_sigma_ij(self.px[mask][self.test[mask]==0],  self.y[mask][self.test[mask]==0]),
+                    "Sig_24": get_sigma_ij(self.px[mask][self.test[mask]==0], self.py[mask][self.test[mask]==0]),
+                    "Sig_33": get_sigma_ij(self.y[mask][self.test[mask]==0],   self.y[mask][self.test[mask]==0]),
+                    "Sig_34": get_sigma_ij(self.y[mask][self.test[mask]==0],  self.py[mask][self.test[mask]==0]),
+                    "Sig_44": get_sigma_ij(self.py[mask][self.test[mask]==0], self.py[mask][self.test[mask]==0])}
 
 
     def set_reference(self, p0c=7e12, mass0=pmass, q0=1):
@@ -423,6 +429,7 @@ def _pyparticles_to_xtrack_dict(pyparticles):
     out = {}
 
     pyst_dict = pyparticles.to_dict()
+    # print(pyst_dict.keys())
     for old, new in pysixtrack_naming:
         if hasattr(pyparticles, old):
             assert new not in pyst_dict.keys()

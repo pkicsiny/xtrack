@@ -7,6 +7,7 @@ from ..dress import dress
 
 """
 19/10/2021: add test attribute for test particles that do not contribute to the bb field but are affected by it
+12/11/2021: add faster computation if covariance
 """
 
 pmass = 938.2720813e6
@@ -142,35 +143,56 @@ class Particles(dress(ParticlesData)):
         )
 
 
-    def get_sigma_matrix(self, mask=[]):
+    def get_sigma_matrix(self, method=1, mask=[]):
 
         def get_sigma_ij(i, j):
     	    return np.mean(np.array(i)*np.array(j)) - np.mean(np.array(i))*np.mean(np.array(j))
 	
-	#x,px,y,py,z,dp: Σij with i,j=1,...,6.
-        if len(mask) == 0:  # use all particles (but exclude test particles)
-            return {"Sig_11": get_sigma_ij(self.x[self.test==0],   self.x[self.test==0]),
-                    "Sig_12": get_sigma_ij(self.x[self.test==0],  self.px[self.test==0]),
-                    "Sig_13": get_sigma_ij(self.x[self.test==0],   self.y[self.test==0]),
-                    "Sig_14": get_sigma_ij(self.x[self.test==0],  self.py[self.test==0]),
-                    "Sig_22": get_sigma_ij(self.px[self.test==0], self.px[self.test==0]),
-                    "Sig_23": get_sigma_ij(self.px[self.test==0],  self.y[self.test==0]),
-                    "Sig_24": get_sigma_ij(self.px[self.test==0], self.py[self.test==0]),
-                    "Sig_33": get_sigma_ij(self.y[self.test==0],   self.y[self.test==0]),
-                    "Sig_34": get_sigma_ij(self.y[self.test==0],  self.py[self.test==0]),
-                    "Sig_44": get_sigma_ij(self.py[self.test==0], self.py[self.test==0])}
-        else:
+        if method==1:
+    	    #x,px,y,py,z,dp: Σij with i,j=1,...,6.
+            if len(mask) == 0:  # use all particles (but exclude test particles)
+                return {"Sig_11": get_sigma_ij(self.x[self.test==0],   self.x[self.test==0]),
+                        "Sig_12": get_sigma_ij(self.x[self.test==0],  self.px[self.test==0]),
+                        "Sig_13": get_sigma_ij(self.x[self.test==0],   self.y[self.test==0]),
+                        "Sig_14": get_sigma_ij(self.x[self.test==0],  self.py[self.test==0]),
+                        "Sig_22": get_sigma_ij(self.px[self.test==0], self.px[self.test==0]),
+                        "Sig_23": get_sigma_ij(self.px[self.test==0],  self.y[self.test==0]),
+                        "Sig_24": get_sigma_ij(self.px[self.test==0], self.py[self.test==0]),
+                        "Sig_33": get_sigma_ij(self.y[self.test==0],   self.y[self.test==0]),
+                        "Sig_34": get_sigma_ij(self.y[self.test==0],  self.py[self.test==0]),
+                        "Sig_44": get_sigma_ij(self.py[self.test==0], self.py[self.test==0])}
+            else:
 
-            return {"Sig_11": get_sigma_ij(self.x[mask][self.test[mask]==0],   self.x[mask][self.test[mask]==0]),
-                    "Sig_12": get_sigma_ij(self.x[mask][self.test[mask]==0],  self.px[mask][self.test[mask]==0]),
-                    "Sig_13": get_sigma_ij(self.x[mask][self.test[mask]==0],   self.y[mask][self.test[mask]==0]),
-                    "Sig_14": get_sigma_ij(self.x[mask][self.test[mask]==0],  self.py[mask][self.test[mask]==0]),
-                    "Sig_22": get_sigma_ij(self.px[mask][self.test[mask]==0], self.px[mask][self.test[mask]==0]),
-                    "Sig_23": get_sigma_ij(self.px[mask][self.test[mask]==0],  self.y[mask][self.test[mask]==0]),
-                    "Sig_24": get_sigma_ij(self.px[mask][self.test[mask]==0], self.py[mask][self.test[mask]==0]),
-                    "Sig_33": get_sigma_ij(self.y[mask][self.test[mask]==0],   self.y[mask][self.test[mask]==0]),
-                    "Sig_34": get_sigma_ij(self.y[mask][self.test[mask]==0],  self.py[mask][self.test[mask]==0]),
-                    "Sig_44": get_sigma_ij(self.py[mask][self.test[mask]==0], self.py[mask][self.test[mask]==0])}
+                return {"Sig_11": get_sigma_ij(self.x[mask][self.test[mask]==0],   self.x[mask][self.test[mask]==0]),
+                        "Sig_12": get_sigma_ij(self.x[mask][self.test[mask]==0],  self.px[mask][self.test[mask]==0]),
+                        "Sig_13": get_sigma_ij(self.x[mask][self.test[mask]==0],   self.y[mask][self.test[mask]==0]),
+                        "Sig_14": get_sigma_ij(self.x[mask][self.test[mask]==0],  self.py[mask][self.test[mask]==0]),
+                        "Sig_22": get_sigma_ij(self.px[mask][self.test[mask]==0], self.px[mask][self.test[mask]==0]),
+                        "Sig_23": get_sigma_ij(self.px[mask][self.test[mask]==0],  self.y[mask][self.test[mask]==0]),
+                        "Sig_24": get_sigma_ij(self.px[mask][self.test[mask]==0], self.py[mask][self.test[mask]==0]),
+                        "Sig_33": get_sigma_ij(self.y[mask][self.test[mask]==0],   self.y[mask][self.test[mask]==0]),
+                        "Sig_34": get_sigma_ij(self.y[mask][self.test[mask]==0],  self.py[mask][self.test[mask]==0]),
+                        "Sig_44": get_sigma_ij(self.py[mask][self.test[mask]==0], self.py[mask][self.test[mask]==0])}
+
+        elif method==2:
+            if len(mask) == 0:
+                cov_matrix = np.cov(np.array([self.x[self.test==0], self.px[self.test==0], self.y[self.test==0], self.py[self.test==0]]), bias=True)
+            else:
+                cov_matrix = np.cov(np.array([self.x[mask][self.test[mask]==0], self.px[mask][self.test[mask]==0],
+                                              self.y[mask][self.test[mask]==0], self.py[mask][self.test[mask]==0]]), bias=True)
+            return {
+                    "Sig_11": cov_matrix[0,0],
+                    "Sig_12": cov_matrix[0,1],
+                    "Sig_13": cov_matrix[0,2],
+                    "Sig_14": cov_matrix[0,3],
+                    "Sig_22": cov_matrix[1,1],
+                    "Sig_23": cov_matrix[1,2],
+                    "Sig_24": cov_matrix[1,3],
+                    "Sig_33": cov_matrix[2,2],
+                    "Sig_34": cov_matrix[2,3],
+                    "Sig_44": cov_matrix[3,3],
+                    }
+
 
 
     def set_reference(self, p0c=7e12, mass0=pmass, q0=1):

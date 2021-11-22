@@ -143,7 +143,7 @@ class Particles(dress(ParticlesData)):
         )
 
 
-    def get_sigma_matrix(self, method=1, mask=[]):
+    def get_sigma_matrix(self, method=2, mask=[]):
 
         def get_sigma_ij(i, j):
     	    return np.mean(np.array(i)*np.array(j)) - np.mean(np.array(i))*np.mean(np.array(j))

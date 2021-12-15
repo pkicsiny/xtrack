@@ -1,12 +1,12 @@
 from pathlib import Path
 
 import xobjects as xo
-from .particles import ParticlesData, gen_local_particle_api
-from .dress import dress
+import xpart as xp
+
 from .general import _pkg_root
 
 start_per_part_block = """
-   int64_t const n_part = LocalParticle_get_num_particles(part0); //only_for_context cpu_serial cpu_openmp
+   int64_t const n_part = LocalParticle_get__num_active_particles(part0); //only_for_context cpu_serial cpu_openmp
    #pragma omp parallel for                                       //only_for_context cpu_openmp
    for (int jj=0; jj<n_part; jj+=!!CHUNK_SIZE!!){                 //only_for_context cpu_serial cpu_openmp
     //#pragma omp simd
@@ -55,7 +55,7 @@ def _handle_per_particle_blocks(sources):
 
 def dress_element(XoElementData):
 
-    DressedElement = dress(XoElementData)
+    DressedElement = xo.dress(XoElementData)
     assert XoElementData.__name__.endswith('Data')
     name = XoElementData.__name__[:-4]
 
@@ -65,21 +65,22 @@ def dress_element(XoElementData):
             f'void {name}_track_particles(\n'
             f'               {name}Data el,\n'
 '''
-                             ParticlesData particles){
+                             ParticlesData particles,
+                             int64_t flag_increment_at_element){
             LocalParticle lpart;
             int64_t part_id = 0;                    //only_for_context cpu_serial cpu_openmp
             int64_t part_id = blockDim.x * blockIdx.x + threadIdx.x; //only_for_context cuda
             int64_t part_id = get_global_id(0);                    //only_for_context opencl
 
-            int64_t n_part = ParticlesData_get_num_particles(particles);
-            if (part_id<n_part){
+            int64_t part_capacity = ParticlesData_get__capacity(particles);
+            if (part_id<part_capacity){
                 Particles_to_LocalParticle(particles, &lpart, part_id);
-                if (check_is_not_lost(&lpart)>0){
+                if (check_is_active(&lpart)>0){
 '''
             f'      {name}_track_local_particle(el, &lpart);\n'
 '''
                 }
-                if (check_is_not_lost(&lpart)>0){
+                if (check_is_active(&lpart)>0 && flag_increment_at_element){
                         increment_at_element(&lpart);
                 }
             }
@@ -88,14 +89,15 @@ def dress_element(XoElementData):
     DressedElement._track_kernel_name = f'{name}_track_particles'
     DressedElement.track_kernel_description = {DressedElement._track_kernel_name:
         xo.Kernel(args=[xo.Arg(XoElementData, name='el'),
-                        xo.Arg(ParticlesData, name='particles')])}
+                        xo.Arg(xp.Particles.XoStruct, name='particles'),
+                        xo.Arg(xo.Int64, name='flag_increment_at_element')])}
     DressedElement.iscollective = False
 
     def compile_track_kernel(self, save_source_as=None):
         context = self._buffer.context
 
         sources=(
-                [gen_local_particle_api(),
+                [xp.gen_local_particle_api(),
                 _pkg_root.joinpath("tracker_src/tracker.h")]
                 + self.XoStruct.extra_sources
                 + [self.track_kernel_source])
@@ -107,7 +109,7 @@ def dress_element(XoElementData):
                  save_source_as=save_source_as)
 
 
-    def track(self, particles):
+    def track(self, particles, increment_at_element=False):
 
         if not hasattr(self, '_track_kernel'):
             context = self._buffer.context
@@ -115,15 +117,16 @@ def dress_element(XoElementData):
                 self.compile_track_kernel()
             self._track_kernel = context.kernels[self._track_kernel_name]
 
-        self._track_kernel.description.n_threads = particles.num_particles
-        self._track_kernel(el=self._xobject, particles=particles)
+        self._track_kernel.description.n_threads = particles._capacity
+        self._track_kernel(el=self._xobject, particles=particles,
+                           flag_increment_at_element=increment_at_element)
 
     DressedElement.compile_track_kernel = compile_track_kernel
     DressedElement.track = track
 
     return DressedElement
 
-
+# TODO Duplicated code with xo.DressedStruct, can it be avoided?
 class MetaBeamElement(type):
 
     def __new__(cls, name, bases, data):
@@ -138,8 +141,11 @@ class MetaBeamElement(type):
         XoStruct = type(XoStruct_name, (xo.Struct,), xofields)
 
         bases = (dress_element(XoStruct),) + bases
+        new_class = type.__new__(cls, name, bases, data)
 
-        return type.__new__(cls, name, bases, data)
+        XoStruct._DressingClass = new_class
+
+        return new_class
 
 class BeamElement(metaclass=MetaBeamElement):
     _xofields={}

@@ -7,7 +7,7 @@ from ..dress import dress
 
 """
 19/10/2021: add test attribute for test particles that do not contribute to the bb field but are affected by it
-12/11/2021: add faster computation if covariance
+12/11/2021: add faster computation of covariance
 """
 
 pmass = 938.2720813e6

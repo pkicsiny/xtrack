@@ -433,4 +433,40 @@ class LongitudinalLimitRect(BeamElement):
         super().__init__(min_zeta=min_zeta, max_zeta=max_zeta, min_pzeta=min_pzeta, max_pzeta=max_pzeta, **kwargs)
 
 
+class NonlinearDynap(BeamElement):
 
+    '''Beam element introducing a limit on a dynamic aperture curve computed from a nonlinear lattice.
+
+    Parameters
+    ----------
+    dynap_j_quadrant : float[:]
+        Array containingthe maxium action j for a given array of deltas in units of 1.
+    delta_bin_edges : float[:]
+        Array of delta bin edges in units of 1.
+    delta_bin_edges: int
+        Lenth of delta bin vector i.e. number of delta bins
+    '''
+
+    _xofields = {
+        'dynap_j_quadrant': xo.Float64[:],
+        'delta_bin_edges': xo.Float64[:],
+        'num_bins': xo.Int64,
+        'sigma_x': xo.Float64,
+        'sigma_px': xo.Float64,
+        'sigma_y': xo.Float64,
+        'sigma_py': xo.Float64,
+        'sigma_delta': xo.Float64,
+        }
+
+    has_backtrack = True
+
+    _extra_c_sources = [
+        _pkg_root.joinpath('beam_elements/apertures_src/nonlineardynap.h')]
+
+    def __init__(self, dynap_j_quadrant=np.array([UNLIMITED]), delta_bin_edges=np.array([0,UNLIMITED]), num_bins=1,
+                 sigma_x=1, sigma_px=1, sigma_y=1, sigma_py=1, sigma_delta=1, **kwargs):
+
+        assert num_bins == len(delta_bin_edges) - 1, "Number of bins must be equal to the length of the bin edges vector - 1!"
+
+        super().__init__(dynap_j_quadrant=dynap_j_quadrant, delta_bin_edges=delta_bin_edges, num_bins=num_bins,
+                         sigma_x=sigma_x, sigma_px=sigma_px, sigma_y=sigma_y, sigma_py=sigma_py, sigma_delta=sigma_delta, **kwargs)

@@ -534,7 +534,9 @@ class FootprintFCC():
             line.discard_tracker()
         line.insert_element(element=mon, name='obs', index=self.mon_idx)
         line.build_tracker(_context=self._context)
-        print(f"[get_footprint] added monitor in line: {line.element_names[max(0,self.mon_idx-2): self.mon_idx+2]}")
+
+        idx = int(np.argwhere([i == "obs" for i in line.element_names])[0])
+        print(f"[get_footprint] added monitor in line: {line.element_names[max(0,idx-2): idx+2]}")
 
         ####################
         # create test grid #
@@ -589,6 +591,8 @@ class FootprintFCC():
 
         bare_tunes = (self.qx, self.qy)
         incoherent_tunes = (self.tunes["qx_i_anal"], self.tunes["qy_i_anal"])
+
+        print(f"[get_footprint] start tracking for {self.n_turns} turns...")
 
         for turn in range(self.n_turns):
 

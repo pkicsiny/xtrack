@@ -43,7 +43,7 @@ from .mad_loader import MadLoader
 from .beam_elements import element_classes
 from . import beam_elements
 from .beam_elements import Drift, BeamElement, Marker, Multipole
-from .footprint import Footprint, _footprint_with_linear_rescale
+from .footprint import Footprint, _footprint_with_linear_rescale, FootprintFCC
 from .internal_record import (start_internal_logging_for_elements_of_type,
                               stop_internal_logging_for_elements_of_type,
                               stop_internal_logging)
@@ -1727,6 +1727,15 @@ class Line:
         return compute_T_matrix_line(self, start=start, end=end,
                                 particle_on_co=particle_on_co,
                                 steps_t_matrix=steps_t_matrix)
+
+    def get_footprint_fcc(self, _context=None, bunch_intensity=None, mass_kg=None, gamma=None, beta_x=None, beta_y=None, beta_s=None,
+            sigma_x=None, sigma_y=None, sigma_z=None, qx=None, qy=None, qs=None, q_b1=1, q_b2=-1, phi=15e-3, alpha=0,
+            x_max=3, y_max=3, n_x=10, n_y=10, mon_idx=-1, n_turns=2**10, do_fma=False, return_test_grid=False):
+
+            kwargs = locals()
+            kwargs.pop('self')
+            fp = FootprintFCC(**kwargs)
+            return fp.get_footprint(self)
 
     def get_footprint(self, nemitt_x=None, nemitt_y=None, n_turns=256, n_fft=2**18,
             mode='polar', r_range=None, theta_range=None, n_r=None, n_theta=None,

@@ -380,3 +380,281 @@ class Footprint():
 
         ax.set_xlabel(r'$q_x$')
         ax.set_ylabel(r'$q_y$')
+
+class FootprintFCC():
+
+    def __init__(self, _context=None, bunch_intensity=None, mass_kg=None, gamma=None, beta_x=None, beta_y=None, beta_s=None,
+            sigma_x=None, sigma_y=None, sigma_z=None, qx=None, qy=None, qs=None, q_b1=1, q_b2=-1, phi=15e-3, alpha=0,
+            x_max=3, y_max=3, n_x=10, n_y=10, mon_idx=-1, n_turns=2**10, do_fma=False, return_test_grid=False):
+
+        assert (bunch_intensity is not None and mass_kg is not None and gamma is not None and beta_x is not None and
+                beta_y is not None and beta_s is not None and sigma_x is not None and sigma_y is not None and
+                sigma_z is not None and qx is not None and qy is not None and qs is not None), (
+            'bunch_intensity, mass_kg, gamma, beta_x, beta_y, beta_s, sigma_x, sigma_y, sigma_z, qx, qy, qs must be provided')
+
+
+        self._context=_context
+
+        # beam parameters
+        self.bunch_intensity = bunch_intensity
+        self.mass_kg = mass_kg
+        self.gamma = gamma
+        self.beta_x = beta_x
+        self.beta_y = beta_y
+        self.beta_s = beta_s
+        self.sigma_x = sigma_x
+        self.sigma_y = sigma_y
+        self.sigma_z = sigma_z
+        self.phi = phi
+        self.alpha = alpha
+        self.q_b1 = q_b1
+        self.q_b2 = q_b2
+
+        self.qx = qx
+        self.qy = qy
+        self.qs = qs
+        self._compute_incoherent_tune_shift()
+
+        # quantities related to the test grid
+        self.x_max = x_max
+        self.y_max = y_max
+        self.n_x = n_x
+        self.n_y = n_y
+        self.mon_idx = mon_idx
+        self.n_turns = n_turns
+        self.do_fma = do_fma
+        self.return_test_grid = return_test_grid
+
+    def _compute_fft(self, x, y, laskar_lower=.9, laskar_upper=1.2):
+        import nafflib
+
+        fx_list = []
+        fy_list = []
+
+        for xi, yi in zip(x, y):
+
+            # get frequencies and amplitudes
+            fx, ax, _ = nafflib.get_tunes(xi, 4, 2, 0) # get_num_peaks=4, order=2
+            fy, ay, _ = nafflib.get_tunes(yi, 4, 2, 0) # get_num_peaks=4, order=2
+
+            ax = np.abs(ax)
+            ay = np.abs(ay)
+
+            if self.qx > .5:
+                fx = 1-fx
+            if self.qy > .5:
+                fy = 1-fy
+
+            ax = ax[(fx>=self.qx*laskar_lower) & (fx<=self.tunes["qx_i_anal"]*laskar_upper)]
+            ay = ay[(fy>=self.qy*laskar_lower) & (fy<=self.tunes["qy_i_anal"]*laskar_upper)]
+
+            fx = fx[(fx>=self.qx*laskar_lower) & (fx<=self.tunes["qx_i_anal"]*laskar_upper)]
+            fy = fy[(fy>=self.qy*laskar_lower) & (fy<=self.tunes["qy_i_anal"]*laskar_upper)]
+
+            fx_list.append( fx[np.argmax(ax)] )
+            fy_list.append( fy[np.argmax(ay)] )
+
+        return fx_list, fy_list
+
+    def _compute_incoherent_tune_shift(self, yokoya=1.3):
+        from scipy import constants as cst
+
+        self.tunes = {}
+
+        # particle radius [m]
+        r0 = -self.q_b1*self.q_b2*cst.e**2/(4*np.pi*cst.epsilon_0*self.mass_kg*cst.c**2) # - if pp, cst.m_e used by default
+
+        # geometric reduction factor, piwinski angle
+        phi_x = np.arctan(np.tan(self.phi)*np.cos(self.alpha))
+        phi_y = np.arctan(np.tan(self.phi)*np.sin(self.alpha))
+
+        piwi_x = self.sigma_z / self.sigma_x*np.tan(phi_x)
+        piwi_y = self.sigma_z / self.sigma_y*np.tan(phi_y)
+
+        geometric_factor_x = np.sqrt(1 + piwi_x**2)
+        geometric_factor_y = np.sqrt(1 + piwi_y**2)
+
+        # get exact xi with formula, when far from resonances xi is the incoherent tune shift
+        self.tunes["xi_x"] = self.bunch_intensity*self.beta_x*r0 / (2*np.pi*self.gamma) / \
+        (self.sigma_x*geometric_factor_x* \
+        (self.sigma_x*geometric_factor_x + self.sigma_y*geometric_factor_y))
+
+        self.tunes["xi_y"] = self.bunch_intensity*self.beta_y*r0 / (2*np.pi*self.gamma) / \
+        (self.sigma_y*geometric_factor_y* \
+        (self.sigma_x*geometric_factor_x + self.sigma_y*geometric_factor_y))
+
+        self.tunes["xi_s"] = self.bunch_intensity*self.beta_s*np.tan(phi_x)**2*r0 / (2*np.pi*self.gamma) / \
+        (self.sigma_x*geometric_factor_x* \
+        (self.sigma_x*geometric_factor_x + self.sigma_y*geometric_factor_y))
+
+        # get analytical incoherent tune, plug in exact ξ from previous
+        if self.qx-int(self.qx) < .5:
+            self.tunes["qx_i_anal"] = (np.arccos(np.cos(2*np.pi*self.qx) - 2*np.pi*self.tunes["xi_x"]*np.sin(2*np.pi*self.qx)))/(2*np.pi)
+        else:
+            self.tunes["qx_i_anal"] = 1 - (np.arccos(np.cos(2*np.pi*self.qx) - 2*np.pi*self.tunes["xi_x"]*np.sin(2*np.pi*self.qx)))/(2*np.pi)
+
+        if self.qy-int(self.qy) < .5:
+            self.tunes["qy_i_anal"] = (np.arccos(np.cos(2*np.pi*self.qy) - 2*np.pi*self.tunes["xi_y"]*np.sin(2*np.pi*self.qy)))/(2*np.pi)
+        else:
+            self.tunes["qy_i_anal"] = 1 - (np.arccos(np.cos(2*np.pi*self.qy) - 2*np.pi*self.tunes["xi_y"]*np.sin(2*np.pi*self.qy)))/(2*np.pi)
+
+        if self.qs-int(self.qs) < .5:
+            self.tunes["qs_i_anal"] = (np.arccos(np.cos(2*np.pi*self.qs) - 2*np.pi*self.tunes["xi_s"]*np.sin(2*np.pi*self.qs)))/(2*np.pi)
+        else:
+            self.tunes["qs_i_anal"] = 1 - (np.arccos(np.cos(2*np.pi*self.qs) - 2*np.pi*self.tunes["xi_s"]*np.sin(2*np.pi*self.qs)))/(2*np.pi)
+
+
+        # get analytical tune shift (equals xi when far from resonance)
+        self.tunes["dqx_anal"] = self.tunes["qx_i_anal"] - self.qx
+        self.tunes["dqy_anal"] = self.tunes["qy_i_anal"] - self.qy
+        self.tunes["dqs_anal"] = self.tunes["qs_i_anal"] - self.qs
+
+        # analytical pi mode corrected by yokoya factor
+        self.tunes["qx_pi_anal"] = self.qx+yokoya*self.tunes["dqx_anal"]
+        self.tunes["qy_pi_anal"] = self.qy+yokoya*self.tunes["dqy_anal"]
+        self.tunes["qs_pi_anal"] = self.qs+yokoya*self.tunes["dqs_anal"]
+
+        return self.tunes
+
+    def get_footprint(self, line):
+        import xpart as xp
+
+        return_dict = {}
+
+        ###############
+        # add monitor #
+        ###############
+
+        n_macroparticles = int(self.n_x*self.n_y)
+
+        # add monitor to end of line
+        mon = xt.ParticlesMonitor(start_at_turn=0, stop_at_turn=self.n_turns, particle_id_range=(0,n_macroparticles))
+        if line.tracker != None:
+            print("[get_footprint] discarding tracker")
+            line.discard_tracker()
+        line.insert_element(element=mon, name='obs', index=self.mon_idx)
+        line.build_tracker(_context=self._context)
+        print(f"[get_footprint] added monitor in line: {line.element_names[max(0,self.mon_idx-2): self.mon_idx+2]}")
+
+        ####################
+        # create test grid #
+        ####################
+
+        fma_chunk_size = int(self.n_turns / 2)
+        fma_step_size = int(self.n_turns*0.05)  # results in 1/(2*f)+1 points, here f=0.05
+
+        # convert into x,y space
+        x_test_vec = np.linspace(0, self.x_max, self.n_x)
+        y_test_vec = np.linspace(0, self.y_max, self.n_y)
+        x_test_vec[0] += 1e-4
+        y_test_vec[0] += 1e-4
+
+        # create mesh of particles in x and y
+        test_coords = [(x_test, y_test) for x_test in x_test_vec for y_test in y_test_vec]
+        x_arr = np.array([xys[0] for xys in test_coords])
+        y_arr = np.array([xys[1] for xys in test_coords])
+
+        # 0 values for other dynamical variables
+        empty_coord_vec = np.zeros(len(x_test_vec)*len(y_test_vec))
+
+        # create particle grid
+        test_grid = xp.Particles(
+                     _context = self._context,
+                    q0        = line.particle_ref.q0,
+                    p0c       = line.particle_ref.p0c,
+                    mass0     = line.particle_ref.mass0,
+                             x= self.sigma_x*x_arr,
+                             y= self.sigma_y*y_arr,
+                          zeta=empty_coord_vec,
+                            px=empty_coord_vec,
+                            py=empty_coord_vec,
+                         delta=empty_coord_vec,
+                         weight=1)
+
+        assert n_macroparticles == test_grid._capacity
+
+        if self.return_test_grid:
+            return_dict["test_grid"] = test_grid.copy()
+
+        print(f"[get_footprint] created test particle grid with {n_macroparticles} particles")
+
+        #########
+        # track #
+        #########
+
+        if self.do_fma:
+            fma_counter = 1
+            chunk_id = 0
+            fft_dict = {}
+
+        bare_tunes = (self.qx, self.qy)
+        incoherent_tunes = (self.tunes["qx_i_anal"], self.tunes["qy_i_anal"])
+
+        for turn in range(self.n_turns):
+
+            ################
+            # track 1 turn #
+            ################
+
+            line.track(test_grid, num_turns=1)
+
+            ########################################################
+            # compute partial tunes and save them at turn 9,19,... #
+            ########################################################
+
+            if self.do_fma and fma_counter==fma_chunk_size:
+                fma_counter -= fma_step_size
+                chunk_id    = int(((turn+1) - fma_chunk_size) / fma_step_size)
+                chunk_start = int(chunk_id*fma_step_size)
+                chunk_end   = int(chunk_id*fma_step_size + fma_chunk_size)
+                print(f"[get_footprint] turn {turn+1}: FMA chunk {chunk_id} | coords [{chunk_start}-{chunk_end}[")
+
+                # extract transverse coordinates falling into the relevant sliding window from the monitor
+                mon_data = mon.to_dict()["data"]
+                coords_dict = {}
+                coords_dict["x"]  = np.reshape( mon_data["x"], (n_macroparticles, self.n_turns))[:,chunk_start:chunk_end]
+                coords_dict["y"]  = np.reshape( mon_data["y"], (n_macroparticles, self.n_turns))[:,chunk_start:chunk_end]
+
+                fx_list, fy_list = self._compute_fft(coords_dict["x"], coords_dict["y"])
+
+                fft_dict[int(chunk_id)] = {"fx": np.array(fx_list),
+                                           "fy": np.array(fy_list),
+                                          }
+
+            if self.do_fma:
+                fma_counter +=1
+
+        print(f"[get_footprint] finished tracking {self.n_turns} turns")
+
+        ################################
+        # compute FFT of full tracking #
+        ################################
+
+        coords_dict = mon.to_dict()["data"]
+        x = np.reshape(coords_dict["x"], (n_macroparticles, self.n_turns))
+        y = np.reshape(coords_dict["y"], (n_macroparticles, self.n_turns))
+
+        fx_list, fy_list = self._compute_fft(x, y)
+
+        #######
+        # fma #
+        #######
+        if self.do_fma:
+            return_dict["d_diff"] = np.log10(
+                np.sqrt(
+                    (fft_dict[min(fft_dict.keys())]["fx"] - fft_dict[max(fft_dict.keys())]["fx"])**2 +
+                    (fft_dict[min(fft_dict.keys())]["fy"] - fft_dict[max(fft_dict.keys())]["fy"])**2
+                )
+            )
+            return_dict["d_rms"] = np.log10(
+                np.sqrt([
+                    np.std([fft_dict[i]["fx"][j] for i in fft_dict.keys()])**2 +
+                    np.std([fft_dict[i]["fy"][j] for i in fft_dict.keys()])**2 for j in range(n_macroparticles)
+                ])
+            )
+
+        return_dict["qx"] = np.array(fx_list)
+        return_dict["qy"] = np.array(fy_list)
+
+        return return_dict
+
